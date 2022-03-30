@@ -1,4 +1,4 @@
-declare module "fit-file-parser" {
+declare module "fit-file-parser-typescript" {
     const content: any;
     export default content;
 }
