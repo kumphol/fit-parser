@@ -8,6 +8,8 @@ var _createClass = function () { function defineProperties(target, props) { for 
 
 var _binary = require('./binary');
 
+var _helper = require('./helper');
+
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var FitParser = function () {
@@ -22,6 +24,7 @@ var FitParser = function () {
       lengthUnit: options.lengthUnit || 'm',
       temperatureUnit: options.temperatureUnit || 'celsius',
       elapsedRecordField: options.elapsedRecordField || false,
+      pressureUnit: options.pressureUnit || 'bar',
       mode: options.mode || 'list'
     };
   }
@@ -105,10 +108,8 @@ var FitParser = function () {
       var file_ids = [];
       var monitor_info = [];
       var lengths = [];
-
-      var tempLaps = [];
-      var tempLengths = [];
-      var tempRecords = [];
+      var tank_updates = [];
+      var tank_summaries = [];
 
       var loopIndex = headerLength;
       var messageTypes = [];
@@ -117,8 +118,8 @@ var FitParser = function () {
       var isModeCascade = this.options.mode === 'cascade';
       var isCascadeNeeded = isModeCascade || this.options.mode === 'both';
 
-      var startDate = void 0,
-          lastStopTimestamp = void 0;
+      var startDate = void 0;
+      var lastStopTimestamp = void 0;
       var pausedTime = 0;
 
       while (loopIndex < crcStart) {
@@ -131,20 +132,9 @@ var FitParser = function () {
 
         switch (messageType) {
           case 'lap':
-            if (isCascadeNeeded) {
-              message.records = tempRecords;
-              tempRecords = [];
-              tempLaps.push(message);
-              message.lengths = tempLengths;
-              tempLengths = [];
-            }
             laps.push(message);
             break;
           case 'session':
-            if (isCascadeNeeded) {
-              message.laps = tempLaps;
-              tempLaps = [];
-            }
             sessions.push(message);
             break;
           case 'event':
@@ -158,9 +148,6 @@ var FitParser = function () {
             events.push(message);
             break;
           case 'length':
-            if (isCascadeNeeded) {
-              tempLengths.push(message);
-            }
             lengths.push(message);
             break;
           case 'hrv':
@@ -173,9 +160,6 @@ var FitParser = function () {
               message.timer_time = 0;
             }
             records.push(message);
-            if (isCascadeNeeded) {
-              tempRecords.push(message);
-            }
             break;
           case 'field_description':
             fieldDescriptions.push(message);
@@ -217,6 +201,12 @@ var FitParser = function () {
           case 'software':
             fitObj.software = message;
             break;
+          case 'tank_update':
+            tank_updates.push(message);
+            break;
+          case 'tank_summary':
+            tank_summaries.push(message);
+            break;
           default:
             if (messageType !== '') {
               fitObj[messageType] = message;
@@ -227,6 +217,9 @@ var FitParser = function () {
 
       if (isCascadeNeeded) {
         fitObj.activity = fitObj.activity || {};
+        laps = (0, _helper.mapDataIntoLap)(laps, 'records', records);
+        laps = (0, _helper.mapDataIntoLap)(laps, 'lengths', lengths);
+        sessions = (0, _helper.mapDataIntoSession)(sessions, laps);
         fitObj.activity.sessions = sessions;
         fitObj.activity.events = events;
         fitObj.activity.hrv = hrv;
@@ -254,6 +247,8 @@ var FitParser = function () {
         fitObj.file_ids = file_ids;
         fitObj.monitor_info = monitor_info;
         fitObj.definitions = definitions;
+        fitObj.tank_updates = tank_updates;
+        fitObj.tank_summaries = tank_summaries;
       }
 
       callback(null, fitObj);

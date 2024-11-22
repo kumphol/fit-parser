@@ -1,5 +1,5 @@
 import { getArrayBuffer, calculateCRC, readRecord } from './binary';
-
+import { mapDataIntoSession, mapDataIntoLap } from './helper';
 export default class FitParser {
   constructor(options = {}) {
     this.options = {
@@ -8,6 +8,7 @@ export default class FitParser {
       lengthUnit: options.lengthUnit || 'm',
       temperatureUnit: options.temperatureUnit || 'celsius',
       elapsedRecordField: options.elapsedRecordField || false,
+      pressureUnit: options.pressureUnit || 'bar',
       mode: options.mode || 'list',
     };
   }
@@ -72,8 +73,8 @@ export default class FitParser {
     fitObj.protocolVersion = protocolVersion;
     fitObj.profileVersion = profileVersion;
 
-    const sessions = [];
-    const laps = [];
+    let sessions = [];
+    let laps = [];
     const records = [];
     const events = [];
     const hrv = [];
@@ -89,10 +90,8 @@ export default class FitParser {
     const file_ids = [];
     const monitor_info = [];
     const lengths = [];
-
-    let tempLaps = [];
-    let tempLengths = [];
-    let tempRecords = [];
+    const tank_updates = [];
+    const tank_summaries = [];
 
     let loopIndex = headerLength;
     const messageTypes = [];
@@ -101,7 +100,8 @@ export default class FitParser {
     const isModeCascade = this.options.mode === 'cascade';
     const isCascadeNeeded = isModeCascade || this.options.mode === 'both';
 
-    let startDate, lastStopTimestamp;
+    let startDate;
+    let lastStopTimestamp;
     let pausedTime = 0;
 
     while (loopIndex < crcStart) {
@@ -112,20 +112,9 @@ export default class FitParser {
 
       switch (messageType) {
         case 'lap':
-          if (isCascadeNeeded) {
-            message.records = tempRecords;
-            tempRecords = [];
-            tempLaps.push(message);
-            message.lengths = tempLengths;
-            tempLengths = [];
-          }
           laps.push(message);
           break;
         case 'session':
-          if (isCascadeNeeded) {
-            message.laps = tempLaps;
-            tempLaps = [];
-          }
           sessions.push(message);
           break;
         case 'event':
@@ -139,9 +128,6 @@ export default class FitParser {
           events.push(message);
           break;
         case 'length':
-          if (isCascadeNeeded) {
-            tempLengths.push(message);
-          }
           lengths.push(message);
           break;
         case 'hrv':
@@ -154,9 +140,6 @@ export default class FitParser {
             message.timer_time = 0;
           }
           records.push(message);
-          if (isCascadeNeeded) {
-            tempRecords.push(message);
-          }
           break;
         case 'field_description':
           fieldDescriptions.push(message);
@@ -177,12 +160,12 @@ export default class FitParser {
           sports.push(message);
           break;
         case 'file_id':
-          if(message){
+          if (message) {
             file_ids.push(message);
           }
           break;
         case 'definition':
-          if(message){
+          if (message) {
             definitions.push(message);
           }
           break;
@@ -198,6 +181,12 @@ export default class FitParser {
         case 'software':
           fitObj.software = message;
           break;
+        case 'tank_update':
+          tank_updates.push(message);
+          break;
+        case 'tank_summary':
+          tank_summaries.push(message);
+          break;
         default:
           if (messageType !== '') {
             fitObj[messageType] = message;
@@ -208,6 +197,9 @@ export default class FitParser {
 
     if (isCascadeNeeded) {
       fitObj.activity = fitObj.activity || {};
+      laps = mapDataIntoLap(laps, 'records', records);
+      laps = mapDataIntoLap(laps, 'lengths', lengths);
+      sessions = mapDataIntoSession(sessions, laps);
       fitObj.activity.sessions = sessions;
       fitObj.activity.events = events;
       fitObj.activity.hrv = hrv;
@@ -235,6 +227,8 @@ export default class FitParser {
       fitObj.file_ids = file_ids;
       fitObj.monitor_info = monitor_info;
       fitObj.definitions = definitions;
+      fitObj.tank_updates = tank_updates;
+      fitObj.tank_summaries = tank_summaries;
     }
 
     callback(null, fitObj);
